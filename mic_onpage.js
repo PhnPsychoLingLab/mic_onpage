@@ -376,9 +376,13 @@ function recordRoutineBegin(snapshot) {
     // 如果有麥克風權限，創建新的MediaRecorder
     if (window.microphoneStream) {
       try {
+        // 創建具有特定取樣率的音訊上下文
+        const audioContext = new AudioContext({ sampleRate: 44100 });
+        
         window.mediaRecorder = new MediaRecorder(window.microphoneStream);
         
         // 設置數據可用時的回調
+        window.audioChunks = [];
         window.mediaRecorder.ondataavailable = function(e) {
           if (e.data.size > 0) {
             window.audioChunks.push(e.data);
@@ -387,9 +391,9 @@ function recordRoutineBegin(snapshot) {
         
         // 開始錄音
         window.mediaRecorder.start();
-        console.log("開始錄音");
+        console.log("開始錄音，取樣率設為 44.1 kHz");
         
-        // 5秒後自動停止錄音並進入下一階段
+        // 可以調整錄音時長，例如改為 60 秒
         setTimeout(() => {
           if (window.mediaRecorder && window.mediaRecorder.state !== 'inactive') {
             window.mediaRecorder.stop();
@@ -401,7 +405,7 @@ function recordRoutineBegin(snapshot) {
           setTimeout(() => {
             continueRoutine = false;
           }, 1000);
-        }, 5000);
+        }, 60000); // 60秒錄音
       } catch (error) {
         console.error("創建MediaRecorder時出錯:", error);
       }
@@ -559,17 +563,41 @@ function playbackRoutineBegin(snapshot) {
         // 創建音訊Blob
         const audioBlob = new Blob(window.audioChunks, { type: 'audio/webm' });
         
-        // 創建音訊URL
-        const audioUrl = URL.createObjectURL(audioBlob);
+        // 創建音訊上下文
+        const audioContext = new AudioContext({ sampleRate: 44100 });
+        
+        // 讀取 Blob 為音訊緩衝區
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // 創建離線音訊上下文以確保 44.1 kHz
+        const offlineCtx = new OfflineAudioContext(
+          audioBuffer.numberOfChannels,
+          audioBuffer.length,
+          44100
+        );
+        
+        const source = offlineCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(offlineCtx.destination);
+        source.start(0);
+        
+        const renderedBuffer = await offlineCtx.startRendering();
+        
+        // 將音訊轉換為 WAV
+        const wavBlob = bufferToWave(renderedBuffer, renderedBuffer.length);
+        
+        // 創建音訊URL用於播放
+        const audioUrl = URL.createObjectURL(wavBlob);
         
         // 創建音訊元素用於播放
         const audio = new Audio(audioUrl);
         
         // 播放音訊
         audio.play().then(() => {
-          console.log("音訊播放中");
+          console.log("WAV 音訊播放中");
           console.log("錄音長度: " + (window.recordingDuration / 1000).toFixed(1) + " 秒");
-          console.log("錄音大小: " + (audioBlob.size / 1024).toFixed(1) + " KB");
+          console.log("WAV 音訊大小: " + (wavBlob.size / 1024).toFixed(1) + " KB");
           
           // 音訊播放結束後自動進入下一階段
           audio.onended = function() {
@@ -578,9 +606,10 @@ function playbackRoutineBegin(snapshot) {
               
               // 將音訊轉換為base64以便保存
               const reader = new FileReader();
-              reader.readAsDataURL(audioBlob);
+              reader.readAsDataURL(wavBlob);
               reader.onloadend = function() {
                 window.audioBase64 = reader.result.split(',')[1];
+                window.audioWavBlob = wavBlob;
                 // 音訊讀取完畢後繼續
                 continueRoutine = false;
               };
@@ -599,12 +628,60 @@ function playbackRoutineBegin(snapshot) {
       continueRoutine = false;
     }
     
-    // 15秒超時保護
-    setTimeout(() => {
-      if (continueRoutine) {
-        continueRoutine = false;
+    // 在函數外部添加 bufferToWave 轉換函數
+    function bufferToWave(abuffer, len) {
+      const numOfChan = abuffer.numberOfChannels;
+      const length = len * numOfChan * 2 + 44;
+      const buffer = new ArrayBuffer(length);
+      const view = new DataView(buffer);
+      let pos = 0;
+      let offset = 0;
+      let sample;
+    
+      // WAVE 標頭
+      function setUint16(data) {
+        view.setUint16(pos, data, true);
+        pos += 2;
       }
-    }, 15000);
+    
+      function setUint32(data) {
+        view.setUint32(pos, data, true);
+        pos += 4;
+      }
+    
+      setUint32(0x46464952);                         // "RIFF"
+      setUint32(length - 8);                         // 檔案長度
+      setUint32(0x45564157);                         // "WAVE"
+    
+      setUint32(0x20746d66);                         // "fmt " chunk
+      setUint32(16);                                 // length = 16
+      setUint16(1);                                  // PCM (未壓縮)
+      setUint16(numOfChan);
+      setUint32(abuffer.sampleRate);
+      setUint32(abuffer.sampleRate * 2 * numOfChan); 
+      setUint16(numOfChan * 2);                      
+      setUint16(16);                                 
+    
+      setUint32(0x61746164);                         // "data" chunk
+      setUint32(length - pos - 4);                   
+    
+      // 寫入交錯音訊數據
+      const channels = [];
+      for(let i = 0; i < abuffer.numberOfChannels; i++)
+        channels.push(abuffer.getChannelData(i));
+    
+      while(pos < length) {
+        for(let i = 0; i < numOfChan; i++) {
+          sample = Math.max(-1, Math.min(1, channels[i][offset]));
+          sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767)|0;
+          view.setInt16(pos, sample, true);
+          pos += 2;
+        }
+        offset++;
+      }
+    
+      return new Blob([buffer], {type: "audio/wav"});
+    }
     // setup some python lists for storing info about the mouse_3
     // current position of the mouse:
     mouse_3.x = [];
@@ -740,8 +817,8 @@ function saveRoutineBegin(snapshot) {
     t = 0;
     frameN = -1;
     continueRoutine = true; // until we're told otherwise
-    saveClock.reset(routineTimer.getTime());
-    routineTimer.add(1.000000);
+    saveClock.reset();
+    routineTimer.reset();
     saveMaxDurationReached = false;
     // update component parameters for each repeat
     // Run 'Begin Routine' code from save_code
@@ -753,14 +830,14 @@ function saveRoutineBegin(snapshot) {
       recorded: (window.audioChunks && window.audioChunks.length > 0),
       recordingDuration: window.recordingDuration || 0,
       recordingSize: (window.audioChunks) ? 
-        window.audioChunks.reduce((total, chunk) => total + chunk.size, 0) : 0
+        window.audioChunks.reduce((total, chunk) => total + chunk.size, 0) : 0,
+      audioFormat: "WAV" // 新增音訊格式
     };
     
     // 創建CSV格式字符串
     const dataHeader = Object.keys(expData).join(",");
     const dataValues = Object.values(expData).join(",");
     const csvData = dataHeader + "\n" + dataValues;
-    
     console.log("保存實驗數據...");
     
     // 保存實驗數據
@@ -792,9 +869,9 @@ function saveRoutineBegin(snapshot) {
           },
           body: JSON.stringify({
             experimentID: 'zqejJsvNSVAI', // 您的DataPipe ID
-            filename: "mic_test_" + expInfo["participant"] + "_" + Date.now() + ".webm",
+            filename: `mic_test_${expInfo["participant"]}_${Date.now()}.wav`, // 修改為 .wav 副檔名
             data: window.audioBase64,
-            datatype: 'audio/webm'
+            datatype: 'audio/wav' // 修改為 wav 類型
           }),
         })
         .then(response => response.json())
@@ -854,11 +931,6 @@ function saveRoutineEachFrame() {
       text_3.setAutoDraw(true);
     }
     
-    frameRemains = 0.0 + 1.0 - psychoJS.window.monitorFramePeriod * 0.75;// most of one frame period left
-    if (text_3.status === PsychoJS.Status.STARTED && t >= frameRemains) {
-      text_3.setAutoDraw(false);
-    }
-    
     // check for quit (typically the Esc key)
     if (psychoJS.experiment.experimentEnded || psychoJS.eventManager.getKeys({keyList:['escape']}).length > 0) {
       return quitPsychoJS('The [Escape] key was pressed. Goodbye!', false);
@@ -877,7 +949,7 @@ function saveRoutineEachFrame() {
       }
     
     // refresh the screen if continuing
-    if (continueRoutine && routineTimer.getTime() > 0) {
+    if (continueRoutine) {
       return Scheduler.Event.FLIP_REPEAT;
     } else {
       return Scheduler.Event.NEXT;
@@ -895,11 +967,9 @@ function saveRoutineEnd(snapshot) {
       }
     }
     psychoJS.experiment.addData('save.stopped', globalClock.getTime());
-    if (saveMaxDurationReached) {
-        saveClock.add(saveMaxDuration);
-    } else {
-        saveClock.add(1.000000);
-    }
+    // the Routine "save" was not non-slip safe, so reset the non-slip timer
+    routineTimer.reset();
+    
     // Routines running outside a loop should always advance the datafile row
     if (currentLoop === psychoJS.experiment) {
       psychoJS.experiment.nextEntry(snapshot);
