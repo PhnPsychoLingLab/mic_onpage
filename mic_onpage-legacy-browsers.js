@@ -369,7 +369,10 @@ function recordRoutineBegin(snapshot) {
     // 如果有麥克風權限，創建新的MediaRecorder
     if (window.microphoneStream) {
       try {
-        window.mediaRecorder = new MediaRecorder(window.microphoneStream);
+        // 指定更明確的音訊格式和編碼
+        window.mediaRecorder = new MediaRecorder(window.microphoneStream, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
         
         // 設置數據可用時的回調
         window.mediaRecorder.ondataavailable = function(e) {
@@ -398,8 +401,6 @@ function recordRoutineBegin(snapshot) {
       } catch (error) {
         console.error("創建MediaRecorder時出錯:", error);
       }
-    } else {
-      console.log("無麥克風權限，無法錄音");
     }
     // setup some python lists for storing info about the mouse_2
     // current position of the mouse:
@@ -542,10 +543,17 @@ function playbackRoutineBegin(snapshot) {
     playbackMaxDurationReached = false;
     // update component parameters for each repeat
     try {
-      // 檢查是否有錄音數據
       if (window.audioChunks && window.audioChunks.length > 0) {
-        // 創建音訊Blob
-        const audioBlob = new Blob(window.audioChunks, { type: 'audio/webm' });
+        // 檢查每個音訊塊的類型
+        window.audioChunks.forEach((chunk, index) => {
+          console.log(`音訊塊 ${index} 大小:`, chunk.size);
+          console.log(`音訊塊 ${index} 類型:`, chunk.type);
+        });
+    
+        const audioBlob = new Blob(window.audioChunks, { type: 'audio/webm;codecs=opus' });
+        
+        console.log("完整音訊 Blob 大小:", audioBlob.size);
+        console.log("完整音訊 Blob 類型:", audioBlob.type);
         
         // 創建音訊URL
         const audioUrl = URL.createObjectURL(audioBlob);
@@ -586,13 +594,6 @@ function playbackRoutineBegin(snapshot) {
       console.error("處理錄音時出錯:", error);
       continueRoutine = false;
     }
-    
-    // 15秒超時保護
-    setTimeout(() => {
-      if (continueRoutine) {
-        continueRoutine = false;
-      }
-    }, 15000);
     // setup some python lists for storing info about the mouse_3
     // current position of the mouse:
     mouse_3.x = [];
@@ -730,7 +731,7 @@ function saveRoutineBegin(snapshot) {
     frameN = -1;
     continueRoutine = true; // until we're told otherwise
     saveClock.reset(routineTimer.getTime());
-    routineTimer.add(1.000000);
+    routineTimer.add(3.000000);
     saveMaxDurationReached = false;
     // update component parameters for each repeat
     // Run 'Begin Routine' code from save_code
@@ -781,9 +782,9 @@ function saveRoutineBegin(snapshot) {
           },
           body: JSON.stringify({
             experimentID: 'zqejJsvNSVAI', // 您的DataPipe ID
-            filename: "mic_test_" + expInfo["participant"] + "_" + Date.now() + ".webm",
+            filename: `mic_test_${expInfo["participant"]}_${Date.now()}.webm`,
             data: window.audioBase64,
-            datatype: 'audio/webm'
+            datatype: 'audio/webm;codecs=opus'
           }),
         })
         .then(response => response.json())
@@ -845,7 +846,7 @@ function saveRoutineEachFrame() {
       text_3.setAutoDraw(true);
     }
     
-    frameRemains = 0.0 + 1.0 - psychoJS.window.monitorFramePeriod * 0.75;// most of one frame period left
+    frameRemains = 0.0 + 3 - psychoJS.window.monitorFramePeriod * 0.75;// most of one frame period left
     if (text_3.status === PsychoJS.Status.STARTED && t >= frameRemains) {
       text_3.setAutoDraw(false);
     }
@@ -889,7 +890,7 @@ function saveRoutineEnd(snapshot) {
     if (saveMaxDurationReached) {
         saveClock.add(saveMaxDuration);
     } else {
-        saveClock.add(1.000000);
+        saveClock.add(3.000000);
     }
     // Routines running outside a loop should always advance the datafile row
     if (currentLoop === psychoJS.experiment) {
