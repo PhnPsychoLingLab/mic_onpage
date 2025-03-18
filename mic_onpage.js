@@ -432,7 +432,6 @@ function recordRoutineBegin(snapshot) {
 }
 
 
-var frameRemains;
 function recordRoutineEachFrame() {
   return async function () {
     //--- Loop for each frame of Routine 'record' ---
@@ -475,11 +474,6 @@ function recordRoutineEachFrame() {
       recording.frameNStart = frameN;  // exact frame index
       
       recording.setAutoDraw(true);
-    }
-    
-    frameRemains = 0.0 + 1.0 - psychoJS.window.monitorFramePeriod * 0.75;// most of one frame period left
-    if (recording.status === PsychoJS.Status.STARTED && t >= frameRemains) {
-      recording.setAutoDraw(false);
     }
     
     // check for quit (typically the Esc key)
@@ -837,6 +831,7 @@ function saveRoutineBegin(snapshot) {
 }
 
 
+var frameRemains;
 function saveRoutineEachFrame() {
   return async function () {
     //--- Loop for each frame of Routine 'save' ---
