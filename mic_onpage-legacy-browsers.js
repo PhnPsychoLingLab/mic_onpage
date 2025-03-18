@@ -772,6 +772,7 @@ function saveRoutineBegin(snapshot) {
       
       // 如果有音訊數據，保存音訊
       if (window.audioBase64) {
+        console.log("音訊 Base64 長度:", window.audioBase64.length);
         console.log("保存音訊數據...");
         
         fetch('https://pipe.jspsych.org/api/data', {
@@ -787,7 +788,10 @@ function saveRoutineBegin(snapshot) {
             datatype: 'audio/webm;codecs=opus'
           }),
         })
-        .then(response => response.json())
+        .then(response => {
+          console.log('伺服器回應狀態:', response.status);
+          return response.json();
+        })
         .then(data => {
           console.log('音訊保存成功:', data);
           setTimeout(() => {
@@ -796,6 +800,7 @@ function saveRoutineBegin(snapshot) {
         })
         .catch(error => {
           console.error('音訊保存失敗:', error);
+          console.error('錯誤詳細資訊:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
           setTimeout(() => {
             quitPsychoJS();
           }, 3000);
