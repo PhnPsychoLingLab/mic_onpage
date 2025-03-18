@@ -209,6 +209,10 @@ function introRoutineBegin(snapshot) {
         })
         .then((stream) => {
           console.log("麥克風權限已授予");
+          console.log("麥克風串流軌道數量:", stream.getAudioTracks().length);
+          console.log("麥克風是否靜音:", stream.getAudioTracks()[0].muted);
+          console.log("麥克風狀態:", stream.getAudioTracks()[0].enabled);
+          
           window.microphoneStream = stream;
           
           // 3秒後自動繼續
@@ -218,18 +222,12 @@ function introRoutineBegin(snapshot) {
         })
         .catch((err) => {
           console.error(`麥克風權限錯誤: ${err}`);
-          // 等待用戶按鍵繼續
+          console.error("錯誤名稱:", err.name);
+          console.error("錯誤訊息:", err.message);
         });
     } else {
       console.error("瀏覽器不支持getUserMedia");
     }
-    
-    // 10秒超時保護
-    setTimeout(() => {
-      if (continueRoutine) {
-        continueRoutine = false;
-      }
-    }, 10000);
     // setup some python lists for storing info about the mouse
     // current position of the mouse:
     mouse.x = [];
