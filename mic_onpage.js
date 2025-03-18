@@ -218,8 +218,15 @@ function introRoutineBegin(snapshot) {
         .then((stream) => {
           console.log("麥克風權限已授予");
           console.log("麥克風串流軌道數量:", stream.getAudioTracks().length);
-          console.log("麥克風是否靜音:", stream.getAudioTracks()[0].muted);
-          console.log("麥克風狀態:", stream.getAudioTracks()[0].enabled);
+          
+          // 增加更詳細的軌道資訊
+          stream.getAudioTracks().forEach((track, index) => {
+            console.log(`軌道 ${index}:`);
+            console.log("  ID:", track.id);
+            console.log("  啟用狀態:", track.enabled);
+            console.log("  靜音狀態:", track.muted);
+            console.log("  就緒狀態:", track.readyState);
+          });
           
           window.microphoneStream = stream;
           
@@ -232,9 +239,24 @@ function introRoutineBegin(snapshot) {
           console.error(`麥克風權限錯誤: ${err}`);
           console.error("錯誤名稱:", err.name);
           console.error("錯誤訊息:", err.message);
+          
+          // 增加常見錯誤的詳細說明
+          switch(err.name) {
+            case 'NotAllowedError':
+              console.error("使用者拒絕麥克風權限");
+              break;
+            case 'NotFoundError':
+              console.error("未找到麥克風設備");
+              break;
+            case 'NotReadableError':
+              console.error("麥克風被其他應用程式佔用");
+              break;
+            default:
+              console.error("未知的麥克風存取錯誤");
+          }
         });
     } else {
-      console.error("瀏覽器不支持getUserMedia");
+      console.error("瀏覽器不支持 getUserMedia");
     }
     // setup some python lists for storing info about the mouse
     // current position of the mouse:
@@ -376,24 +398,39 @@ function recordRoutineBegin(snapshot) {
     // 如果有麥克風權限，創建新的MediaRecorder
     if (window.microphoneStream) {
       try {
-        // 創建具有特定取樣率的音訊上下文
-        const audioContext = new AudioContext({ sampleRate: 44100 });
+        console.log("麥克風串流:", window.microphoneStream);
+        console.log("音訊軌道:", window.microphoneStream.getAudioTracks());
         
-        window.mediaRecorder = new MediaRecorder(window.microphoneStream);
+        window.mediaRecorder = new MediaRecorder(window.microphoneStream, {
+          mimeType: 'audio/webm' // 明確指定 MIME 類型
+        });
+        
+        // 檢查 MediaRecorder 狀態
+        console.log("MediaRecorder 狀態:", window.mediaRecorder.state);
         
         // 設置數據可用時的回調
         window.audioChunks = [];
         window.mediaRecorder.ondataavailable = function(e) {
+          console.log("收到音訊數據塊:", e.data.size, "bytes");
           if (e.data.size > 0) {
             window.audioChunks.push(e.data);
           }
         };
         
+        // 增加錄音狀態的日誌
+        window.mediaRecorder.onstart = () => {
+          console.log("開始錄音");
+        };
+        
+        window.mediaRecorder.onstop = () => {
+          console.log("停止錄音");
+          console.log("總音訊數據塊:", window.audioChunks.length);
+        };
+        
         // 開始錄音
         window.mediaRecorder.start();
-        console.log("開始錄音，取樣率設為 44.1 kHz");
         
-        // 可以調整錄音時長，例如改為 60 秒
+        // 5秒後自動停止錄音並進入下一階段
         setTimeout(() => {
           if (window.mediaRecorder && window.mediaRecorder.state !== 'inactive') {
             window.mediaRecorder.stop();
@@ -405,7 +442,7 @@ function recordRoutineBegin(snapshot) {
           setTimeout(() => {
             continueRoutine = false;
           }, 1000);
-        }, 60000); // 60秒錄音
+        }, 5000);
       } catch (error) {
         console.error("創建MediaRecorder時出錯:", error);
       }
